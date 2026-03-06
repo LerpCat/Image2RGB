@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Image to RGB</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #1a1a1a;
+    color: #cccccc;
+    font-family: "Segoe UI", "Consolas", monospace;
+    font-size: 13px;
+    padding: 8px;
+  }
+
+  /* ImGui-style window */
+  .window {
+    background: #252526;
+    border: 1px solid #3c3c3c;
+    margin-bottom: 6px;
+    width: 620px;
+  }
+
+  .window-title {
+    background: #2d2d30;
+    border-bottom: 1px solid #3c3c3c;
+    padding: 3px 8px;
+    font-size: 12px;
+    color: #999;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .window-title .dot {
+    width: 6px; height: 6px;
+    background: #569cd6;
+    border-radius: 1px;
+    display: inline-block;
+  }
+
+  .window-body {
+    padding: 8px;
+  }
+
+  /* Separator */
+  .sep {
+    border: none;
+    border-top: 1px solid #3c3c3c;
+    margin: 6px 0;
+  }
+
+  /* Row layout */
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+  }
+
+  .row label {
+    color: #9cdcfe;
+    width: 110px;
+    flex-shrink: 0;
+    font-size: 12px;
+  }
+
+  .row .val {
+    color: #ce9178;
+    font-size: 12px;
+  }
+
+  /* ImGui-style button */
+  button {
+    background: #3c3c3c;
+    border: 1px solid #555;
+    color: #cccccc;
+    font-family: inherit;
+    font-size: 12px;
+    padding: 2px 10px;
+    cursor: pointer;
+    outline: none;
+    height: 22px;
+  }
+
+  button:hover { background: #4c4c4c; border-color: #666; }
+  button:active { background: #2a2a2a; }
+
+  button.primary {
+    background: #264f78;
+    border-color: #3a7cc4;
+    color: #d4e8ff;
+  }
+  button.primary:hover { background: #2f5f8f; }
+
+  /* Drop zone */
+  #dropzone {
+    border: 1px dashed #555;
+    background: #1e1e1e;
+    padding: 20px;
+    text-align: center;
+    cursor: pointer;
+    position: relative;
+    color: #666;
+    font-size: 12px;
+    margin-bottom: 6px;
+    transition: border-color 0.1s, background 0.1s;
+  }
+  #dropzone:hover, #dropzone.drag { border-color: #569cd6; background: #1e2a38; color: #9cdcfe; }
+  #dropzone input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+
+  /* Progress bar */
+  .progress-bg {
+    background: #1e1e1e;
+    border: 1px solid #3c3c3c;
+    height: 14px;
+    position: relative;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    width: 0%;
+    background: #264f78;
+    transition: width 0.1s;
+  }
+  .progress-text {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    color: #aaa;
+  }
+
+  /* Output textarea */
+  textarea {
+    width: 100%;
+    height: 160px;
+    background: #1e1e1e;
+    border: 1px solid #3c3c3c;
+    color: #9cdcfe;
+    font-family: "Consolas", monospace;
+    font-size: 11px;
+    padding: 4px;
+    resize: vertical;
+    outline: none;
+    line-height: 1.5;
+  }
+
+  textarea:focus { border-color: #569cd6; }
+
+  /* Canvas */
+  canvas {
+    display: block;
+    background: #000;
+    border: 1px solid #3c3c3c;
+    image-rendering: pixelated;
+    width: 240px;
+    height: 180px;
+  }
+
+  .hidden { display: none !important; }
+
+  /* Inline text button */
+  .link-btn {
+    background: none;
+    border: none;
+    color: #569cd6;
+    font-size: 12px;
+    cursor: pointer;
+    padding: 0;
+    height: auto;
+    text-decoration: underline;
+  }
+  .link-btn:hover { color: #9cdcfe; background: none; }
+</style>
+</head>
+<body>
+
+<!-- Upload window -->
+<div class="window">
+  <div class="window-title"><span class="dot"></span>Image to RGB Converter</div>
+  <div class="window-body">
+    <div id="dropzone">
+      <input type="file" id="file-input" accept="image/*">
+      Drop image here or click to browse (PNG, JPG, GIF, BMP, WEBP)
+    </div>
+    <div class="row">
+      <label>Max output size</label>
+      <span class="val">480 × 360</span>
+    </div>
+    <div class="row">
+      <label>Padding</label>
+      <span class="val">black pixels (letterbox)</span>
+    </div>
+    <div class="row">
+      <label>Format</label>
+      <span class="val">{w}x{h}y  then one 9-digit RGB per line</span>
+    </div>
+  </div>
+</div>
+
+<!-- Info + preview window -->
+<div class="window hidden" id="info-window">
+  <div class="window-title"><span class="dot"></span>Image Info</div>
+  <div class="window-body">
+    <div style="display:flex; gap:10px; align-items:flex-start;">
+      <canvas id="preview-canvas" width="480" height="360"></canvas>
+      <div style="flex:1;">
+        <div class="row"><label>Source size</label><span class="val" id="info-orig">-</span></div>
+        <div class="row"><label>Output size</label><span class="val">480 × 360</span></div>
+        <div class="row"><label>Total pixels</label><span class="val" id="info-px">-</span></div>
+        <div class="row"><label>Est. file size</label><span class="val" id="info-bytes">-</span></div>
+        <hr class="sep">
+        <button id="reset-btn">Clear</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Progress window -->
+<div class="window hidden" id="progress-window">
+  <div class="window-title"><span class="dot"></span>Processing</div>
+  <div class="window-body">
+    <div class="progress-bg">
+      <div class="progress-fill" id="progress-bar"></div>
+      <div class="progress-text" id="progress-label">0%</div>
+    </div>
+  </div>
+</div>
+
+<!-- Output window -->
+<div class="window hidden" id="output-window">
+  <div class="window-title"><span class="dot"></span>Output</div>
+  <div class="window-body">
+    <div class="row" style="margin-bottom:6px;">
+      <button class="primary" id="download-btn">Save .txt</button>
+      <button id="copy-btn">Copy</button>
+      <span style="color:#555; font-size:11px; margin-left:4px;">Preview truncated — save file for full output</span>
+    </div>
+    <textarea id="output-text" readonly spellcheck="false"></textarea>
+  </div>
+</div>
+
+<script>
+const MAX_W = 480, MAX_H = 360;
+let rawOutput = '', currentFilename = 'image';
+
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('file-input');
+const previewCanvas = document.getElementById('preview-canvas');
+
+dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('drag'); });
+dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag'));
+dropzone.addEventListener('drop', e => {
+  e.preventDefault(); dropzone.classList.remove('drag');
+  const f = e.dataTransfer.files[0];
+  if (f && f.type.startsWith('image/')) processFile(f);
+});
+fileInput.addEventListener('change', () => { if (fileInput.files[0]) processFile(fileInput.files[0]); });
+document.getElementById('reset-btn').addEventListener('click', reset);
+
+function show(id) { document.getElementById(id).classList.remove('hidden'); }
+function hide(id) { document.getElementById(id).classList.add('hidden'); }
+
+function reset() {
+  ['info-window','progress-window','output-window'].forEach(hide);
+  document.getElementById('output-text').value = '';
+  rawOutput = ''; fileInput.value = '';
+}
+
+function processFile(file) {
+  currentFilename = file.name;
+  const img = new Image();
+  const url = URL.createObjectURL(file);
+  img.onload = () => { URL.revokeObjectURL(url); render(img); };
+  img.src = url;
+}
+
+function render(img) {
+  const srcW = img.naturalWidth, srcH = img.naturalHeight;
+  const scale = Math.min(MAX_W / srcW, MAX_H / srcH, 1);
+  const scaledW = Math.round(srcW * scale), scaledH = Math.round(srcH * scale);
+  const offX = Math.floor((MAX_W - scaledW) / 2), offY = Math.floor((MAX_H - scaledH) / 2);
+
+  const ctx = previewCanvas.getContext('2d');
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, MAX_W, MAX_H);
+  ctx.drawImage(img, offX, offY, scaledW, scaledH);
+
+  document.getElementById('info-orig').textContent = srcW + ' × ' + srcH;
+  document.getElementById('info-px').textContent = (MAX_W * MAX_H).toLocaleString();
+
+  show('info-window');
+  hide('output-window');
+  show('progress-window');
+  document.getElementById('progress-bar').style.width = '0%';
+  document.getElementById('progress-label').textContent = '0%';
+
+  setTimeout(() => encode(ctx), 30);
+}
+
+function pad3(n) { return n < 10 ? '00'+n : n < 100 ? '0'+n : ''+n; }
+
+function encode(ctx) {
+  const data = ctx.getImageData(0, 0, MAX_W, MAX_H).data;
+  const parts = [MAX_W + 'x' + MAX_H + 'y\n'];
+  const total = MAX_H;
+
+  function chunk(y0) {
+    const y1 = Math.min(y0 + 20, total);
+    for (let y = y0; y < y1; y++)
+      for (let x = 0; x < MAX_W; x++) {
+        const i = (y * MAX_W + x) * 4;
+        parts.push(pad3(data[i]) + pad3(data[i+1]) + pad3(data[i+2]) + '\n');
+      }
+    const pct = Math.round(y1 / total * 100);
+    document.getElementById('progress-bar').style.width = pct + '%';
+    document.getElementById('progress-label').textContent = pct + '%  (row ' + y1 + ' / ' + total + ')';
+    if (y1 < total) setTimeout(() => chunk(y1), 0);
+    else finalize(parts.join(''));
+  }
+  chunk(0);
+}
+
+function finalize(output) {
+  rawOutput = output;
+  hide('progress-window');
+
+  const bytes = new TextEncoder().encode(output).length;
+  document.getElementById('info-bytes').textContent = formatBytes(bytes);
+
+  const preview = output.length > 2000 ? output.slice(0, 2000) + '\n... [truncated]' : output;
+  document.getElementById('output-text').value = preview;
+  show('output-window');
+
+  document.getElementById('download-btn').onclick = () => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([rawOutput], {type:'text/plain'}));
+    a.download = currentFilename.replace(/\.[^.]+$/, '') + '_rgb.txt';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
+
+  document.getElementById('copy-btn').onclick = () => {
+    navigator.clipboard.writeText(rawOutput).then(() => {
+      const btn = document.getElementById('copy-btn');
+      btn.textContent = 'Copied!';
+      setTimeout(() => btn.textContent = 'Copy', 1500);
+    });
+  };
+}
+
+function formatBytes(b) {
+  if (b < 1024) return b + ' B';
+  if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
+  return (b/1048576).toFixed(2) + ' MB';
+}
+</script>
+</body>
+</html>
